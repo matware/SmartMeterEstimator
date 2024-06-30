@@ -45,18 +45,25 @@ namespace SmartMeterEstimator
         }
     }
 
+    public struct TimeRange
+    {
+        TimeSpan StartTime;
+        TimeSpan EndTime;
+    }
+
     public class PriceBand
     {
         private readonly TimeSpan indexIncrement = TimeSpan.FromMinutes(5);
-        private readonly string name;
+        public string Name { get; }
 
-        public PriceBand(TimeSpan startTime, TimeSpan endTime, decimal pricePerKwH, TarrifTypes tarrifType,string name)
+        public PriceBand(TimeSpan startTime, TimeSpan endTime, decimal pricePerKwH, TarrifTypes tarrifType,string name, params TimeRange[] r)
         {
+            ranges.AddRange(r);
             StartTime = startTime + Constants.TimeFiddle;
             EndTime = endTime + Constants.TimeFiddle;
             PricePerKwH = pricePerKwH;
             TarrifType = tarrifType;
-            this.name = name;
+            this.Name = name;
             Console.WriteLine($"{name} --> StartTime:{StartTime} EndTime:{EndTime}");
         }
 
@@ -70,6 +77,7 @@ namespace SmartMeterEstimator
             return t >= StartTime && t < EndTime;
         }
 
+        private List<TimeRange> ranges = new List<TimeRange>();
         public TimeSpan StartTime { get; }
         public TimeSpan EndTime { get; }
         public decimal PricePerKwH { get; }
@@ -77,24 +85,53 @@ namespace SmartMeterEstimator
 
         public override string ToString()
         {
-            return $"{name} : ${PricePerKwH:F2}";
+            return $"{Name} : ${PricePerKwH:F2}";
         }
     }
 
     public class CostBreakdown
     {
-        public List<PriceBand> Prices { get; }
+        public List<PriceBand> Bands { get; }
 
         public CostBreakdown(List<PriceBand> prices)
         {
-            this.Prices = prices;
+            this.Bands = prices;
         }
 
         public Dictionary<PriceBand, decimal> Price(Record record)
         {
             var result = new Dictionary<PriceBand, decimal>();
+            int index = 0;
+            bool used = false;
+            foreach (var r in record.Readings)
+            {
+                foreach (var b in Bands)
+                {
+                    if (b.IsInBand(record, index))
+                    {
+                        if (!result.ContainsKey(b))
+                            result[b] = 0;
 
-            foreach (var b in Prices)
+                        result[b] += b.PricePerKwH * r;
+                        used = true;
+                    }
+                }
+                
+                if (!used)
+                    Console.WriteLine($"Reading {index} not used");
+
+                index++;
+            }
+            
+
+            return result;
+        }
+
+        public Dictionary<PriceBand, decimal> Power(Record record)
+        {
+            var result = new Dictionary<PriceBand, decimal>();
+
+            foreach (var b in Bands)
             {
                 int index = 0;
                 result[b] = 0;
@@ -102,7 +139,7 @@ namespace SmartMeterEstimator
                 {
                     if (b.IsInBand(record, index))
                     {
-                        result[b] += b.PricePerKwH * r;
+                        result[b] += r;
                     }
                     index++;
                 }
@@ -130,7 +167,8 @@ namespace SmartMeterEstimator
         private readonly DateTime endDate;
         private readonly CostBreakdown costBreakdown;
         Dictionary<DateTime, decimal> totals = new Dictionary<DateTime, decimal>();
-        Dictionary<DateTime, Dictionary<PriceBand, decimal>> bandTotals = new Dictionary<DateTime, Dictionary<PriceBand, decimal>>();
+        Dictionary<DateTime, Dictionary<PriceBand, decimal>> bandPriceTotals = new Dictionary<DateTime, Dictionary<PriceBand, decimal>>();
+        Dictionary<DateTime, Dictionary<PriceBand, decimal>> bandPowerTotals = new Dictionary<DateTime, Dictionary<PriceBand, decimal>>();
         Dictionary<DateTime, decimal> powerTotals = new Dictionary<DateTime, decimal>();
 
         public DateRangeSummary(CostBreakdown costBreakdown)
@@ -146,12 +184,14 @@ namespace SmartMeterEstimator
                 var total = bandedPrices.Values.Sum();
 
                 AddTotal(r, total, totals);
-                AddTotal(r, bandedPrices, bandTotals);
+                AddTotal(r, bandedPrices, bandPriceTotals);
+                AddTotal(r, costBreakdown.Power(r), bandPowerTotals);
             }
 
             var p = r.Readings.Sum();
 
             AddTotal(r, p, powerTotals);
+
         }
 
         private void AddTotal(Record r, decimal val, Dictionary<DateTime, decimal> kvp)
@@ -170,6 +210,9 @@ namespace SmartMeterEstimator
                 var bands = kvp[r.Date];
                 foreach (var band in bands.Keys)
                 {
+                    if(!val.ContainsKey(band))
+                        continue;
+
                     bands[band] += val[band];
                 }
             }
@@ -245,6 +288,7 @@ namespace SmartMeterEstimator
                 if (date.OutOfRange(start, end))
                     continue;
 
+                if (kvp[date].ContainsKey(bandFilter))
                 summaries.Add(new Summary { Date = date, Total = kvp[date][bandFilter] });
             }
 
@@ -265,12 +309,15 @@ namespace SmartMeterEstimator
             if (bandFilter == null)
                 return GetTotalsImpl(totals, start, end);
             else
-                return GetTotalsImpl(bandTotals, start, end, bandFilter);
+                return GetTotalsImpl(bandPriceTotals, start, end, bandFilter);
         }
 
-        public Summary[] GetPower(DateTime start, DateTime end)
+        public Summary[] GetPower(DateTime start, DateTime end, PriceBand? bandFilter = null)
         {
-            return GetTotalsImpl(powerTotals, start, end);
+            if (bandFilter == null)
+                return GetTotalsImpl(powerTotals, start, end);
+            else
+                return GetTotalsImpl(bandPowerTotals, start, end, bandFilter);
         }
     }
 
