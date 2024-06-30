@@ -1,14 +1,13 @@
 ﻿using CsvHelper.Configuration;
-using CsvHelper.Configuration.Attributes;
-using System;
-using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace SmartMeterEstimator
 {
+    public static class Constants
+    {
+        public static readonly TimeSpan TimeFiddle = TimeSpan.FromMinutes(30);
+    }
+
     public enum TarrifTypes
     {
         OnPeak,
@@ -46,12 +45,16 @@ namespace SmartMeterEstimator
     public class PriceBand
     {
         private readonly TimeSpan indexIncrement = TimeSpan.FromMinutes(5);
-        public PriceBand(TimeSpan startTime, TimeSpan endTime, decimal pricePerKwH, TarrifTypes tarrifType)
+        private readonly string name;
+
+        public PriceBand(TimeSpan startTime, TimeSpan endTime, decimal pricePerKwH, TarrifTypes tarrifType,string name)
         {
-            StartTime = startTime;
-            EndTime = endTime;
+            StartTime = startTime + Constants.TimeFiddle;
+            EndTime = endTime + Constants.TimeFiddle;
             PricePerKwH = pricePerKwH;
             TarrifType = tarrifType;
+            this.name = name;
+            Console.WriteLine($"{name} --> StartTime:{StartTime} EndTime:{EndTime}");
         }
 
         public bool IsInBand(Record r, int index)
@@ -60,13 +63,18 @@ namespace SmartMeterEstimator
             if (r.TarrifType != this.TarrifType)
                 return false;
 
-            return t >= StartTime && t< EndTime;
+            return t >= StartTime && t < EndTime;
         }
 
         public TimeSpan StartTime { get; }
         public TimeSpan EndTime { get; }
         public decimal PricePerKwH { get; }
         public TarrifTypes TarrifType { get; }
+
+        public override string ToString()
+        {
+            return $"{name} : ${PricePerKwH}";
+        }
     }
 
     public class CostBreakdown
@@ -98,44 +106,103 @@ namespace SmartMeterEstimator
 
             return result;
         }
+
     }
 
     public struct Summary
     {
         public DateTime Date;
-        public Decimal Total;
+        public decimal Total;
+
+        public override string ToString()
+        {
+            return $"{Date} : ${Total}";
+        }
     }
 
-    public class DailySummary
+    public class DateRangeSummary
     {
+        private readonly DateTime startDate;
+        private readonly DateTime endDate;
+        private readonly CostBreakdown costBreakdown;
         Dictionary<DateTime, decimal> totals = new Dictionary<DateTime, decimal>();
+        Dictionary<DateTime, decimal> powerTotals = new Dictionary<DateTime, decimal>();
 
-        public DailySummary()
+        public DateRangeSummary(CostBreakdown costBreakdown)
         {
+            this.costBreakdown = costBreakdown;
+        }
+       
+        public void Add(Record r)
+        {
+            if (costBreakdown != null)
+            {
+                var total = costBreakdown.Price(r).Values.Sum();
+                AddTotal(r, total, totals);
+            }
 
+            var p = r.Readings.Sum();
+
+            AddTotal(r, p, powerTotals);
         }
 
-        public void Add(Record r, decimal total)
+        private void AddTotal(Record r, decimal val, Dictionary<DateTime, decimal> kvp)
         {
-            if (totals.ContainsKey(r.Date))
-                totals[r.Date] += total;
+            if (kvp.ContainsKey(r.Date))
+                kvp[r.Date] += val;
             else
-                totals[r.Date] = total;
+                kvp[r.Date] = val;
         }
 
-        public Summary[] GetTotals()
+        public decimal GetTotalCost(DateTime startDate, DateTime endDate)
         {
-            var dates = totals.Keys.Order().ToArray();
+            return GetTotalImpl(startDate, endDate, totals);
+        }
+
+        public decimal GetTotalPower(DateTime startDate, DateTime endDate)
+        {
+            return GetTotalImpl(startDate, endDate, powerTotals);
+        }
+
+        public decimal GetTotalImpl(DateTime startDate, DateTime endDate, Dictionary<DateTime,decimal> kvp)
+        {
+            endDate = endDate.AddMicroseconds(1);
+            var total = 0m;
+            int count = 0;
+            foreach (var date in kvp.Keys)
+            {
+                if (date < startDate || date >= endDate)
+                    continue;
+
+                total += kvp[date];
+                count++;
+            }
+            return total;
+        }
+
+        private Summary[] GetTotalsImpl(Dictionary<DateTime, decimal> kvp)
+        {
+            var dates = kvp.Keys.Order().ToArray();
 
             var summaries = new List<Summary>(dates.Length);
 
             foreach (var date in dates)
             {
-                summaries.Add(new Summary { Date = date, Total = totals[date] });
+                summaries.Add(new Summary { Date = date, Total = kvp[date] });
             }
 
             return summaries.ToArray();
         }
+
+        public Summary[] GetCosts()
+        {
+            return GetTotalsImpl(totals);
+        }
+        public Summary[] GetPower()
+        {
+            return GetTotalsImpl(powerTotals);
+        }
+
     }
 }
 
