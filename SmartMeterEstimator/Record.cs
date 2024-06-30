@@ -1,5 +1,8 @@
 ﻿using CsvHelper.Configuration;
+using Plotly.NET.CSharp;
+using Plotly.NET.LayoutObjects;
 using System.Globalization;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace SmartMeterEstimator
 {
@@ -60,6 +63,7 @@ namespace SmartMeterEstimator
         public bool IsInBand(Record r, int index)
         {
             var t = index * indexIncrement;
+
             if (r.TarrifType != this.TarrifType)
                 return false;
 
@@ -132,7 +136,7 @@ namespace SmartMeterEstimator
         {
             this.costBreakdown = costBreakdown;
         }
-       
+
         public void Add(Record r)
         {
             if (costBreakdown != null)
@@ -164,14 +168,14 @@ namespace SmartMeterEstimator
             return GetTotalImpl(startDate, endDate, powerTotals);
         }
 
-        public decimal GetTotalImpl(DateTime startDate, DateTime endDate, Dictionary<DateTime,decimal> kvp)
+        public decimal GetTotalImpl(DateTime startDate, DateTime endDate, Dictionary<DateTime, decimal> kvp)
         {
             endDate = endDate.AddMicroseconds(1);
             var total = 0m;
             int count = 0;
             foreach (var date in kvp.Keys)
             {
-                if (date < startDate || date >= endDate)
+                if (date.OutOfRange(startDate, endDate))
                     continue;
 
                 total += kvp[date];
@@ -194,6 +198,23 @@ namespace SmartMeterEstimator
             return summaries.ToArray();
         }
 
+        private Summary[] GetTotalsImpl(Dictionary<DateTime, decimal> kvp, DateTime start, DateTime end)
+        {
+            var dates = kvp.Keys.Order().ToArray();
+
+            var summaries = new List<Summary>(dates.Length);
+
+            foreach (var date in dates)
+            {
+                if (date.OutOfRange(start, end))
+                    continue;
+
+                summaries.Add(new Summary { Date = date, Total = kvp[date] });
+            }
+
+            return summaries.ToArray();
+        }
+
         public Summary[] GetCosts()
         {
             return GetTotalsImpl(totals);
@@ -203,6 +224,39 @@ namespace SmartMeterEstimator
             return GetTotalsImpl(powerTotals);
         }
 
+        public Summary[] GetCosts(DateTime start, DateTime end)
+        {
+            return GetTotalsImpl(totals, start, end);
+        }
+        public Summary[] GetPower(DateTime start, DateTime end)
+        {
+            return GetTotalsImpl(powerTotals, start, end);
+        }
+    }
+
+    public static class DateRangeHelpers
+    {
+        public static bool OutOfRange(this DateTime d, DateTime start, DateTime end)
+        {
+            return d < start || d >= end;
+
+        }
+    }
+
+    public static class Optomatic
+    {
+        /// <summary>
+        /// Converts the `Optional` value to `Some(value)` if the value is valid, or `None` if it is not.
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="opt">The `Optional` value to convert to a F# Option</param>
+        /// <returns>opt converted to `Option`</returns>
+        public static Microsoft.FSharp.Core.FSharpOption<T> ToOption<T>(this Optional<T> opt) => opt.IsSome ? new(opt.Value) : Microsoft.FSharp.Core.FSharpOption<T>.None;
+
+        public static Optional<T> ToOptional<T>(this T o)
+        {
+            return new Optional<T>() { Value = o };
+        }
     }
 }
 
