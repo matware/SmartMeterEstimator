@@ -6,39 +6,33 @@ using Plotly.NET;
 using CS = Plotly.NET.CSharp;
 using Plotly.NET.LayoutObjects;
 using Plotly.NET.CSharp;
+
 var config = new CsvConfiguration(CultureInfo.InvariantCulture)
 {
     //NewLine = Environment.NewLine,
     HasHeaderRecord = false,    
 };
 
-var car = new PriceBand(TimeSpan.FromHours(0), TimeSpan.FromHours(6), 0.07272728m, TarrifTypes.OnPeak, "car");
-var peak1 = new PriceBand(TimeSpan.FromHours(6), TimeSpan.FromHours(10), 0.4561m, TarrifTypes.OnPeak, "peak - Mornings");
-var sholder = new PriceBand(TimeSpan.FromHours(10), TimeSpan.FromHours(15), 0.2673m, TarrifTypes.OnPeak, "sholder");
-var peak2 = new PriceBand(TimeSpan.FromHours(15), TimeSpan.FromHours(24), 0.4561m, TarrifTypes.OnPeak, "peak - Evening");
-var peak3 = new PriceBand(TimeSpan.FromHours(-0.5), TimeSpan.FromHours(0), 0.4561m, TarrifTypes.OnPeak, "peak - Missing");
+var car = new PriceBand(0.07272728m, TarrifTypes.OnPeak, "car",TimeRange.FromHours(0,6));
+var peak = new PriceBand(0.4561m, TarrifTypes.OnPeak, "peak",TimeRange.FromHours(6,10), TimeRange.FromHours(15,24),TimeRange.FromHours(-0.5f,0));
+var sholder = new PriceBand(0.2673m, TarrifTypes.OnPeak, "sholder", TimeRange.FromHours(10, 15));
 
-//var peak3 = new PriceBand(TimeSpan.FromHours(0), TimeSpan.FromHours(0), 0.4561m, TarrifTypes.OnPeak, "peak - Overlap");
+var controlledMorning = new PriceBand(0.2155m, TarrifTypes.OffPeak, "controlled off peak", TimeRange.FromHours(0, 6.5), TimeRange.FromHours(23.5, 24), TimeRange.FromHours(-0.5, 0));
+var controlledSholder = new PriceBand(0.1725m, TarrifTypes.OffPeak, "controlled sholder", TimeRange.FromHours(9.5, 15.5));
+var controlledPeak1 = new PriceBand(0.4145m, TarrifTypes.OffPeak, "controlled peak", TimeRange.FromHours(6.5, 9.5), TimeRange.FromHours(15.5, 23.5));
 
-var controlledMorning = new PriceBand(TimeSpan.FromHours(0), TimeSpan.FromHours(6.5), 0.2155m, TarrifTypes.OffPeak, "controlledMorning");
-var controlledSholder = new PriceBand(TimeSpan.FromHours(9.5), TimeSpan.FromHours(15.5), 0.1725m, TarrifTypes.OffPeak, "controlledSholder");
-var controlledPeak1 = new PriceBand(TimeSpan.FromHours(6.5), TimeSpan.FromHours(9.5), 0.4145m, TarrifTypes.OffPeak, "controlledPeak");
-var controlledPeak2 = new PriceBand(TimeSpan.FromHours(15.5), TimeSpan.FromHours(23.5), 0.4145m, TarrifTypes.OffPeak, "controlledPeak");
-var controlledNight = new PriceBand(TimeSpan.FromHours(23.5), TimeSpan.FromHours(24), 0.2155m, TarrifTypes.OffPeak, "controledNight");
-var controlledMissing = new PriceBand(TimeSpan.FromHours(-0.5), TimeSpan.FromHours(0), 0.4561m, TarrifTypes.OffPeak, "peak - Missing");
+var bandList = new List<PriceBand> {
+    car,
+    sholder,
+    peak,
+    controlledMorning,
+    controlledSholder,
+    controlledPeak1,
+    };
+DateTime detailedView = new DateTime(2024,06,20);
 
-var cb = new CostBreakdown(new List<PriceBand> {
-    peak3,
-    car, 
-    sholder, 
-    peak1, 
-    peak2,
-    controlledMissing,
-    controlledNight, 
-    controlledMorning, 
-    controlledSholder, 
-    controlledPeak1, 
-    controlledPeak2 });
+var cb = new CostBreakdown(bandList);
+
 
 using (var sr = new StreamReader("20015323531_20221222_20240625_20240626210349_SAPN_DETAILED.csv"))
 using (var csv = new CsvReader(sr, config))
@@ -73,10 +67,13 @@ using (var csv = new CsvReader(sr, config))
         }
     }
 
-    var start = new DateTime(2024, 05, 19);
-    var end = new DateTime(2024, 06, 19);
+    var start = new DateTime(2024, 03, 19);
+    var end = new DateTime(2024, 04, 19);
+
     var c = priceSummary.GetTotalCost(start, end);
+
     Console.WriteLine($"Estimate for bill {c:F2} + ${28.82:F2} = {c+28.82m:F2}, {priceSummary.GetTotalPower(start,end):F1}kWh");
+
     var powerTotal = priceSummary.GetPower(start, end);
     var priceTotal = priceSummary.GetCosts(start, end);
 
@@ -136,10 +133,66 @@ using (var csv = new CsvReader(sr, config))
         powerCharts.Add(bandedPowerChart);
     }
 
-    var xxx = Plotly.NET.CSharp.Chart.Combine(priceCharts);
-    var yyy = Plotly.NET.CSharp.Chart.Combine(powerCharts);
-    var grid = CS.Chart.Grid(new[] { power, prices, xxx,yyy }, 4, 1);
+    var priceChart = Plotly.NET.CSharp.Chart.Combine(priceCharts);
+    var powerChart = Plotly.NET.CSharp.Chart.Combine(powerCharts);
+
+    var grid = CS.Chart.Grid(new[] { power, prices, priceChart, powerChart}, 4, 1);
 
     Plotly.NET.CSharp.GenericChartExtensions.Show(grid);
+
+    var costDetail = new CostDetails(cb.Bands);
+    List<BandValue> powerDetail = new List<BandValue>();
+    List<BandValue> priceDetail = new List<BandValue>();
+    Record? selectedRecord = null;
+    foreach (var row in rows)
+    {
+        if(row.Date == detailedView)
+        {
+            powerDetail = costDetail.Power(row);
+            priceDetail = costDetail.Price(row);
+            selectedRecord = row;
+            break;
+        }
+    }
+    if (selectedRecord == null)
+        return;
+
+    var priceDetailCharts = new List<GenericChart>();
+    var powerDetailsCharts = new List<GenericChart>();
+
+    List<DateTime> timeSpans = new List<DateTime>();
+
+    for (int i = 0; i < rows.Count; i++)
+    {
+        timeSpans.Add(selectedRecord.Date + TimeSpan.FromMinutes(5) * i);
+    }
+
+    foreach (var band in cb.Bands)
+    {
+        var isInDetails = priceDetail.Any(r => r.Band == band);
+        if (!isInDetails)
+            continue;
+
+        var bandedChart = CS.Chart.StackedColumn<decimal, DateTime, string>(
+            values: priceDetail.Select(r => r.Band == band ? r.Value : 0m),
+            Keys: timeSpans, Name: $"{band.Name} - ${priceDetail.Where(x=>x.Band == band).Sum(x => x.Value):F2}");
+
+        bandedChart.WithXAxisStyle(title: Title.init("Min"));
+        bandedChart.WithYAxisStyle(title: Title.init("$"));
+        priceDetailCharts.Add(bandedChart);
+
+        var bandedPowerChart = CS.Chart.StackedColumn<decimal, DateTime, string>(
+            values: powerDetail.Select(r => r.Band == band ? r.Value : 0m),
+            Keys:timeSpans, Name: $"{band.Name}{/*$bandTotal.Sum(x => x.Total):F2*/""}");
+
+        bandedPowerChart.WithXAxisStyle(title: Title.init("Min"));
+        bandedPowerChart.WithYAxisStyle(title: Title.init("kW"));
+        powerDetailsCharts.Add(bandedPowerChart);
+    }
+
+    var priceDetailChart = Plotly.NET.CSharp.Chart.Combine(priceDetailCharts);
+    var powerDetailsChart = Plotly.NET.CSharp.Chart.Combine(powerDetailsCharts);
+
+    Plotly.NET.CSharp.GenericChartExtensions.Show(CS.Chart.Grid(new[] {priceDetailChart, powerDetailsChart }, 2, 1));
 
 }
