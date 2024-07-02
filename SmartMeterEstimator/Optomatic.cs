@@ -17,6 +17,21 @@ namespace SmartMeterEstimator
             return new Optional<T>() { Value = o };
         }
     }
+
+    public static class StylingHelpers
+    {
+        public static string GetPrefix(this DateRangeSummary s)
+        {
+            return s.Style.PostFix ? "" : s.Style.Unit;
+        }
+
+        public static string GetPostfix(this DateRangeSummary s)
+        {
+            return s.Style.PostFix ?s.Style.Unit:"";
+        }
+
+    }
+
 }
 
 
