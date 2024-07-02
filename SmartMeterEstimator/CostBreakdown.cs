@@ -64,13 +64,18 @@
         public decimal Value { get; set; }
     }
 
-    public class CostDetails
+    public class CostDetail
     {
-        public List<PriceBand> Bands { get; }
+        private readonly Func<PriceBand, decimal> scale;
 
-        public CostDetails(List<PriceBand> prices)
+        public List<PriceBand> Bands { get; }
+        public string Unit { get; }
+
+        public CostDetail(List<PriceBand> prices, Func<PriceBand,decimal> scale, string unit)
         {
             this.Bands = prices;
+            this.scale = scale;
+            Unit = unit;
         }
 
         public List<BandValue> Price(Record record)
@@ -82,31 +87,10 @@
                 foreach (var b in Bands)
                 {
                     if (b.IsInBand(record, i))
-                    {
-                        result.Add(new BandValue() { Band = b, Value = b.PricePerKwH * record.Readings[i]});
+                    {   
+                        result.Add(new BandValue() { Band = b, Value = scale(b) * record.Readings[i]});
                         break;
                     }
-                }
-            }
-
-            return result;
-        }
-
-        public List<BandValue> Power(Record record)
-        {
-            var result = new List<BandValue>();
-
-            for (int i = 0; i < record.Readings.Count; i++)
-            {
-                foreach (var b in Bands)
-                {
-                    if (b.IsInBand(record, i))
-                    {
-                        var band = new BandValue() { Band = b, Value = record.Readings[i] };
-                        result.Add(band);
-                        break;
-                    }
-
                 }
             }
 
