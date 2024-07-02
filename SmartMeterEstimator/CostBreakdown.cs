@@ -102,14 +102,14 @@ namespace SmartMeterEstimator
         public decimal Value { get; set; }
     }
 
-    public class CostDetail
+    public class DetailCalculator
     {
         private readonly Func<PriceBand, decimal> scale;
 
         public List<PriceBand> Bands { get; }
         public string Unit { get; }
 
-        public CostDetail(List<PriceBand> prices, Func<PriceBand,decimal> scale, string unit)
+        public DetailCalculator(List<PriceBand> prices, Func<PriceBand,decimal> scale, string unit)
         {
             this.Bands = prices;
             this.scale = scale;

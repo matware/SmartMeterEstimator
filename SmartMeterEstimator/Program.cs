@@ -23,23 +23,26 @@ internal class Program
         var controlledMorning = new PriceBand(0.2155m, TarrifTypes.OffPeak, "controlled off peak", TimeRange.FromHours(0, 6.5), TimeRange.FromHours(23.5, 24), TimeRange.FromHours(-0.5, 0));
         var controlledSholder = new PriceBand(0.1725m, TarrifTypes.OffPeak, "controlled sholder", TimeRange.FromHours(9.5, 15.5));
         var controlledPeak1 = new PriceBand(0.4145m, TarrifTypes.OffPeak, "controlled peak", TimeRange.FromHours(6.5, 9.5), TimeRange.FromHours(15.5, 23.5));
+        
+        var start = new DateTime(2024, 05, 19);
+        var end = new DateTime(2024, 06, 19);
 
+        var detailedView = new DateTime(2024, 07, 1);
         var bandList = new List<PriceBand> {
-    car,
-    sholder,
-    peak,
-    controlledMorning,
-    controlledSholder,
-    controlledPeak1,
-    };
-        DateTime detailedView = new DateTime(2024, 06, 20);
+            car,
+            sholder,
+            peak,
+            controlledMorning,
+            controlledSholder,
+            controlledPeak1,};
+
 
         var cb = new CostBreakdown(bandList);
         var cb2 = new RecordSummary(bandList,x=>x.PricePerKwH);
         var cb3 = new RecordSummary(bandList, x => 1);
 
 
-        using (var sr = new StreamReader("20015323531_20221222_20240625_20240626210349_SAPN_DETAILED.csv"))
+        using (var sr = new StreamReader("20015323531_20221222_20240701_20240702163730_SAPN_DETAILED.csv"))
         using (var csv = new CsvReader(sr, config))
         {
             var rows = new List<Record>();
@@ -75,8 +78,7 @@ internal class Program
                 }
             }
 
-            var start = new DateTime(2024, 03, 19);
-            var end = new DateTime(2024, 04, 19);
+         
 
             var grid = CS.Chart.Grid(GetOverviewCharts(cb, start, end, summarisers.ToArray()), 4, 1);
 
@@ -97,8 +99,7 @@ internal class Program
             var powerTotal = summary.GetValues(start, end);
 
             Defaults.DefaultWidth = 30 * powerTotal.Length;
-
-            var summaryChart = CS.Chart.Column<decimal, DateTime, string>(values: powerTotal.Select(r => r.Total), Keys: powerTotal.Select(r => r.Date).ToOptional(), Name: summary.Style.Title);
+            var summaryChart = CS.Chart.Column<decimal, DateTime, string>(values: powerTotal.Select(r => r.Total).ToArray(), Keys: powerTotal.Select(r => r.Date).ToArray(), Name: summary.Style.Title);
 
             summaryChart.WithTitle(summary.Style.Title)
                 .WithXAxisStyle(title: Title.init("Date"))
@@ -116,7 +117,7 @@ internal class Program
 
                 var bandedChart = CS.Chart.StackedColumn<decimal, DateTime, string>(
                     values: bandTotal.Select(r => r.Total),
-                    Keys: bandTotal.Select(r => r.Date).ToOptional(), Name: $"{band.Name} - {summary.GetPrefix()}{bandTotal.Sum(x => x.Total):F2}{summary.GetPostfix()}");
+                    Keys: bandTotal.Select(r => r.Date).ToArray(), Name: $"{band.Name} - {summary.GetPrefix()}{bandTotal.Sum(x => x.Total):F2}{summary.GetPostfix()}");
 
                 bandedChart.WithXAxisStyle(title: Title.init("Date"));
                 bandedChart.WithYAxisStyle(title: Title.init(summary.Style.Unit));
@@ -143,8 +144,8 @@ internal class Program
     public static List<GenericChart> GetDetailedCharts(CostBreakdown cb, List<Record> rows, DateTime detailedView)
     {
         var result = new List<GenericChart>();
-        List<CostDetail> costDetails = new List<CostDetail>() { new CostDetail(cb.Bands, (b) => b.PricePerKwH,"$"), new CostDetail(cb.Bands, (b) => 1, "kWh") };
-        Dictionary<CostDetail,List<BandValue>> detailValues = new Dictionary<CostDetail, List<BandValue>>();
+        List<DetailCalculator> costDetails = new List<DetailCalculator>() { new DetailCalculator(cb.Bands, (b) => b.PricePerKwH,"$"), new DetailCalculator(cb.Bands, (b) => 1, "kWh") };
+        Dictionary<DetailCalculator,List<BandValue>> detailValues = new Dictionary<DetailCalculator, List<BandValue>>();
 
         var selectedRecord  = GetSelectedRecord(rows, detailedView);
         if (selectedRecord == null)
