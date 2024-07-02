@@ -23,4 +23,10 @@
     <PackageReference Include="Plotly.NET.CSharp" Version="0.12.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="20015323531_20221222_20240701_20240702163730_SAPN_DETAILED.csv">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
