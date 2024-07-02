@@ -1,4 +1,5 @@
-﻿namespace SmartMeterEstimator
+﻿
+namespace SmartMeterEstimator
 {
     public class CostBreakdown
     {
@@ -58,6 +59,43 @@
         }
     }
 
+    public class RecordSummary
+    {
+        private readonly Func<PriceBand, decimal> func;
+
+        public List<PriceBand> Bands { get; }
+
+        public RecordSummary(List<PriceBand> prices, Func<PriceBand, decimal> func)
+        {
+            this.Bands = prices;
+            this.func = func;
+        }
+
+        public Dictionary<PriceBand, decimal> Calculate(Record record)
+        {
+            var result = new Dictionary<PriceBand, decimal>();
+            int index = 0;
+
+            foreach (var r in record.Readings)
+            {
+                foreach (var b in Bands)
+                {
+                    if (b.IsInBand(record, index))
+                    {
+                        if (!result.ContainsKey(b))
+                            result[b] = 0;
+
+                        result[b] += func(b) * r;
+                        break;
+                    }
+                }
+
+                index++;
+            }
+            return result;
+        }
+    }
+
     public struct BandValue
     {
         public PriceBand Band { get; set; }
@@ -78,7 +116,7 @@
             Unit = unit;
         }
 
-        public List<BandValue> Price(Record record)
+        public List<BandValue> Calculate(Record record)
         {
             var result = new List<BandValue>();
             

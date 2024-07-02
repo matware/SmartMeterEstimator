@@ -4,10 +4,7 @@ using SmartMeterEstimator;
 using System.Globalization;
 using Plotly.NET;
 using CS = Plotly.NET.CSharp;
-using Plotly.NET.LayoutObjects;
 using Plotly.NET.CSharp;
-using System;
-using System.Collections.Generic;
 
 internal class Program
 {
@@ -38,6 +35,8 @@ internal class Program
         DateTime detailedView = new DateTime(2024, 06, 20);
 
         var cb = new CostBreakdown(bandList);
+        var cb2 = new RecordSummary(bandList,x=>x.PricePerKwH);
+        var cb3 = new RecordSummary(bandList, x => 1);
 
 
         using (var sr = new StreamReader("20015323531_20221222_20240625_20240626210349_SAPN_DETAILED.csv"))
@@ -48,8 +47,9 @@ internal class Program
 
             var currentTarrifType = TarrifTypes.OffPeak;
 
-
-            var priceSummary = new DateRangeSummary(cb);
+            var summarisers = new List<DateRangeSummary>();
+            summarisers.Add(new DateRangeSummary(cb2,new Style() { Unit = "$", Title = "price", PostFix = false }));
+            summarisers.Add(new DateRangeSummary(cb3,new Style() { Unit = "kWh", Title = "power", PostFix = true }));
 
             while (csv.Read())
             {
@@ -66,7 +66,9 @@ internal class Program
                         var r = csv.GetRecord<Record>();
                         r.TarrifType = currentTarrifType;
                         r.EstimatedCost = cb.Price(r).Values.Sum();
-                        priceSummary.Add(r);
+
+                        foreach(var summariser in summarisers)
+                            summariser.Add(r);
 
                         rows.Add(r);
                         break;
@@ -76,108 +78,86 @@ internal class Program
             var start = new DateTime(2024, 03, 19);
             var end = new DateTime(2024, 04, 19);
 
-            var c = priceSummary.GetTotalCost(start, end);
-
-            Console.WriteLine($"Estimate for bill {c:F2} + ${28.82:F2} = {c + 28.82m:F2}, {priceSummary.GetTotalPower(start, end):F1}kWh");
-
-            var powerTotal = priceSummary.GetPower(start, end);
-            var priceTotal = priceSummary.GetCosts(start, end);
-
-            Defaults.DefaultWidth = 30 * powerTotal.Length;
-            //////////////////////////
-            // This is not working yet
-            //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-            var aa = new LinearAxis();
-            LinearAxis.style<IConvertible, IConvertible, IConvertible, IConvertible, IConvertible, IConvertible, IConvertible, IConvertible>(TickFormat: "kw".ToOptional().ToOption()).Invoke(aa);
-
-            var yAxisTicks = LinearAxis.init<IConvertible, IConvertible, IConvertible, IConvertible, IConvertible, IConvertible, IConvertible, IConvertible>(TickFormat: "kw".ToOptional().ToOption());
-            var xAxisTicks = LinearAxis.init<IConvertible, IConvertible, IConvertible, IConvertible, IConvertible, IConvertible, IConvertible, IConvertible>(TickFormat: "doy".ToOptional().ToOption());
-            //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-            //var power = CS.Chart.Point<DateTime, decimal, string>(y: powerTotal.Select(r => r.Total), x: powerTotal.Select(r => r.Date), Name: "power");
-            var power = CS.Chart.Column<decimal, DateTime, string>(values: powerTotal.Select(r => r.Total), Keys: powerTotal.Select(r => r.Date).ToOptional(), Name: "power");
-
-            power.WithTitle("Power")
-                .WithXAxisStyle(title: Title.init("Date"))
-                .WithYAxisStyle(title: Title.init("KW")).WithYAxis(aa).WithYAxis(xAxisTicks);
-
-
-            //var prices = CS.Chart.Point<DateTime, decimal, string>(y: priceTotal.Select(r => r.Total), x: priceTotal.Select(r => r.Date),Name:"price")
-            var prices = CS.Chart.StackedColumn<decimal, DateTime, string>(values: priceTotal.Select(r => r.Total), Keys: priceTotal.Select(r => r.Date).ToOptional(), Name: "price");
-            prices.WithTitle("Daily Costs");
-            prices.WithXAxisStyle(title: Title.init("Date"));
-            prices.WithYAxisStyle(title: Title.init("$"));
-
-
-            var priceCharts = new List<GenericChart>();
-            var powerCharts = new List<GenericChart>();
-
-            foreach (var band in cb.Bands)
-            {
-                var bandTotal = priceSummary.GetCosts(start, end, band);
-                if (bandTotal.Sum(x => x.Total) <= 0)
-                    continue;
-
-                var bandedChart = CS.Chart.StackedColumn<decimal, DateTime, string>(
-                    values: bandTotal.Select(r => r.Total),
-                    Keys: bandTotal.Select(r => r.Date).ToOptional(), Name: $"{band} - ${bandTotal.Sum(x => x.Total):F2}");
-
-                bandedChart.WithXAxisStyle(title: Title.init("Date"));
-                bandedChart.WithYAxisStyle(title: Title.init("$"));
-                priceCharts.Add(bandedChart);
-
-                var bandPowerTotal = priceSummary.GetPower(start, end, band);
-                if (bandTotal.Sum(x => x.Total) <= 0)
-                    continue;
-
-                var bandedPowerChart = CS.Chart.StackedColumn<decimal, DateTime, string>(
-                    values: bandPowerTotal.Select(r => r.Total),
-                    Keys: bandPowerTotal.Select(r => r.Date).ToOptional(), Name: $"{band.Name} - {bandPowerTotal.Sum(x => x.Total):F2}kWh");
-
-                bandedPowerChart.WithXAxisStyle(title: Title.init("Date"));
-                bandedPowerChart.WithYAxisStyle(title: Title.init("kW"));
-                powerCharts.Add(bandedPowerChart);
-            }
-
-            var priceChart = CS.Chart.Combine(priceCharts);
-            var powerChart = CS.Chart.Combine(powerCharts);
-
-            var grid = CS.Chart.Grid(new[] { power, prices, priceChart, powerChart }, 4, 1);
+            var grid = CS.Chart.Grid(GetOverviewCharts(cb, start, end, summarisers.ToArray()), 4, 1);
 
             CS.GenericChartExtensions.Show(grid);
 
-            var charts = Carty2(cb,rows,detailedView);
+            var charts = GetDetailedCharts(cb,rows,detailedView);
 
             CS.GenericChartExtensions.Show(CS.Chart.Grid(charts, 2, 1));
         }
     }
 
+    public static List<GenericChart> GetOverviewCharts(CostBreakdown cb, DateTime start, DateTime end, params DateRangeSummary[] summarisers)
+    {
+        var result = new List<GenericChart>();
 
+        foreach (var summary in summarisers)
+        {
+            var powerTotal = summary.GetValues(start, end);
 
-    public static List<GenericChart> Carty2(CostBreakdown cb, List<Record> rows, DateTime detailedView)
+            Defaults.DefaultWidth = 30 * powerTotal.Length;
+
+            var summaryChart = CS.Chart.Column<decimal, DateTime, string>(values: powerTotal.Select(r => r.Total), Keys: powerTotal.Select(r => r.Date).ToOptional(), Name: summary.Style.Title);
+
+            summaryChart.WithTitle(summary.Style.Title)
+                .WithXAxisStyle(title: Title.init("Date"))
+                .WithYAxisStyle(title: Title.init(summary.Style.Unit));
+            
+            result.Add(summaryChart);
+
+            var stackedCharts = new List<GenericChart>();
+
+            foreach (var band in cb.Bands)
+            {
+                var bandTotal = summary.GetValues(start, end, band);
+                if (bandTotal.Sum(x => x.Total) <= 0)
+                    continue;
+
+                var bandedChart = CS.Chart.StackedColumn<decimal, DateTime, string>(
+                    values: bandTotal.Select(r => r.Total),
+                    Keys: bandTotal.Select(r => r.Date).ToOptional(), Name: $"{band.Name} - {summary.GetPrefix()}{bandTotal.Sum(x => x.Total):F2}{summary.GetPostfix()}");
+
+                bandedChart.WithXAxisStyle(title: Title.init("Date"));
+                bandedChart.WithYAxisStyle(title: Title.init(summary.Style.Unit));
+                stackedCharts.Add(bandedChart);
+            }
+
+            result.Add(CS.Chart.Combine(stackedCharts));
+        }
+
+        return result;
+    }
+
+ 
+    private static Record? GetSelectedRecord(List<Record> rows, DateTime detailedView)
+    {
+        foreach (var row in rows)
+        {
+            if (row.Date == detailedView)
+                return row;
+        }
+        return null;
+    }
+
+    public static List<GenericChart> GetDetailedCharts(CostBreakdown cb, List<Record> rows, DateTime detailedView)
     {
         var result = new List<GenericChart>();
         List<CostDetail> costDetails = new List<CostDetail>() { new CostDetail(cb.Bands, (b) => b.PricePerKwH,"$"), new CostDetail(cb.Bands, (b) => 1, "kWh") };
         Dictionary<CostDetail,List<BandValue>> detailValues = new Dictionary<CostDetail, List<BandValue>>();
-        Record? selectedRecord = null;
-        
-        foreach (var row in rows)
-        {
-            if (row.Date == detailedView)
-            {
-                foreach(var d in costDetails)
-                {
-                    var values = d.Price(row);
-                    if (values.Sum(v => v.Value) == 0)
-                        continue;
-                    detailValues[d] = d.Price(row);
-                }
-                selectedRecord = row;
-                break;
-            }
-        }
+
+        var selectedRecord  = GetSelectedRecord(rows, detailedView);
         if (selectedRecord == null)
             return result;
+
+
+        foreach (var d in costDetails)
+        {
+            var values = d.Calculate(selectedRecord);
+            if (values.Sum(v => v.Value) == 0)
+                continue;
+            detailValues[d] = d.Calculate(selectedRecord);
+        }
 
         var priceDetailCharts = new List<GenericChart>();
 
