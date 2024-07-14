@@ -1,21 +1,28 @@
-﻿namespace SmartMeterEstimator
+﻿using System.Text.Json.Serialization;
+
+namespace SmartMeterEstimator
 {
     public class PriceBand
     {
         private readonly TimeSpan indexIncrement = TimeSpan.FromMinutes(5);
-        public string Name { get; }
+        public string Name { get; set; }
 
-        public PriceBand(decimal pricePerKwH, TarrifTypes tarrifType,string name, params TimeRange[] r)
+        public PriceBand(decimal pricePerKwH, TarrifTypes tarrifType,string name, params TimeRange[] ranges)
         {
-            foreach (var t in r)
+            foreach (var t in ranges)
             {
-                ranges.Add(new TimeRange() { StartTime = t.StartTime+Constants.TimeFiddle, EndTime = t.EndTime + Constants.TimeFiddle });
+                Ranges.Add(t);
             }
 
             PricePerKwH = pricePerKwH;
             TarrifType = tarrifType;
             this.Name = name;
-            Console.WriteLine($"{name} --> StartTime:{StartTime} EndTime:{EndTime}");
+        }
+
+        [JsonConstructor]
+        public PriceBand(decimal pricePerKwH, TarrifTypes tarrifType, string name, List<TimeRange> ranges):
+            this(pricePerKwH,tarrifType, name, ranges.ToArray()) 
+        {
         }
 
         public bool IsInBand(Record r, int index)
@@ -25,19 +32,17 @@
             if (r.TarrifType != this.TarrifType)
                 return false;
 
-            foreach (var range in ranges)
+            foreach (var range in Ranges)
             {
-                if(t >= range.StartTime && t < range.EndTime)
+                if(t >= range.Start && t < range.End)
                     return true;
             }
             return false;
         }
 
-        private List<TimeRange> ranges = new List<TimeRange>();
-        public TimeSpan StartTime { get; }
-        public TimeSpan EndTime { get; }
-        public decimal PricePerKwH { get; }
-        public TarrifTypes TarrifType { get; }
+        public List<TimeRange> Ranges { get; set; } = new List<TimeRange>();
+        public decimal PricePerKwH { get; set; }
+        public TarrifTypes TarrifType { get; set; }
 
         public override string ToString()
         {
