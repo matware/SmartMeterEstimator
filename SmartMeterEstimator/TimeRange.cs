@@ -1,14 +1,14 @@
 ﻿namespace SmartMeterEstimator
 {
-    public struct TimeRange
+    public class TimeRange
     {
         public TimeRange(TimeSpan start, TimeSpan end)
         {
-            StartTime = start;
-            EndTime = end;
+            Start = start;
+            End = end;
         }
-        public TimeSpan StartTime;
-        public TimeSpan EndTime;
+        public TimeSpan Start { get; set; }
+        public TimeSpan End {get; set; }
 
         public static TimeRange FromHours(double s, double e)
         {
