@@ -58,7 +58,6 @@ internal class Program
             HasHeaderRecord = false,
         };
 
-        string input = "20015323531_20221222_20240701_20240702163730_SAPN_DETAILED.csv";
         Options options = null;
         
         Parser.Default.ParseArguments<Options>(args).WithParsed<Options>(o => {            
@@ -71,10 +70,9 @@ internal class Program
             return;
         }
 
-        var detailedView = new DateTime(2024, 07, 1);
+        var detailedView = new DateTime(2025, 01, 30);
 
         List < PriceBand > bandList = null;
-
 
         if (File.Exists(options.PriceBands))
         { 
@@ -94,7 +92,7 @@ internal class Program
         var cb3 = new RecordSummary(bandList, x => 1);
 
 
-        using (var sr = new StreamReader(input))
+        using (var sr = new StreamReader(options.Input))
         using (var csv = new CsvReader(sr, config))
         {
             var rows = new List<Record>();

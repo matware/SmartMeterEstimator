@@ -10,8 +10,6 @@
 
     public class DateRangeSummary
     {
-        private readonly DateTime startDate;
-        private readonly DateTime endDate;
         private readonly RecordSummary costBreakdown;        
         Dictionary<DateTime, decimal> totals = new Dictionary<DateTime, decimal>();
         Dictionary<DateTime, Dictionary<PriceBand, decimal>> bandPriceTotals = new Dictionary<DateTime, Dictionary<PriceBand, decimal>>();
