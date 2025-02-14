@@ -7,7 +7,6 @@ using CS = Plotly.NET.CSharp;
 using Plotly.NET.CSharp;
 using CommandLine;
 using System.Text.Json;
-using System.Collections.Generic;
 
 internal class Program
 {
@@ -52,6 +51,9 @@ internal class Program
     }
     private static void Main(string[] args)
     {
+        var builder = WebApplication.CreateBuilder(args);
+        var app = builder.Build();
+
         var config = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
             //NewLine = Environment.NewLine,
@@ -70,12 +72,26 @@ internal class Program
             return;
         }
 
-        var detailedView = new DateTime(2025, 01, 30);
 
-        List < PriceBand > bandList = null;
+        app.MapGet("/day/", (HttpContext context, DateOnly? date = null) => {
+            context.Response.ContentType = "text/html";
+            return  GenericChart.toEmbeddedHTML(GetDay(options,config,date));
+            });
+        app.Map("/period/", (HttpContext context) => {
+            context.Response.ContentType = "text/html";
+            return GenericChart.toEmbeddedHTML(GetPeriod(options, config));
+        });
+
+        app.Run();
+    }
+
+
+    private static GenericChart GetPeriod(Options options, CsvConfiguration config)
+    {
+        List<PriceBand> bandList = null;
 
         if (File.Exists(options.PriceBands))
-        { 
+        {
             var bands = File.ReadAllText(options.PriceBands);
             bandList = JsonSerializer.Deserialize<List<PriceBand>>(bands);
         }
@@ -88,11 +104,13 @@ internal class Program
         }
 
         var cb = new CostBreakdown(bandList);
-        var cb2 = new RecordSummary(bandList,x=>x.PricePerKwH);
+        var cb2 = new RecordSummary(bandList, x => x.PricePerKwH);
         var cb3 = new RecordSummary(bandList, x => 1);
 
+        GenericChart chart = null;
 
         using (var sr = new StreamReader(options.Input))
+
         using (var csv = new CsvReader(sr, config))
         {
             var rows = new List<Record>();
@@ -101,8 +119,8 @@ internal class Program
             var currentTarrifType = TarrifTypes.OffPeak;
 
             var summarisers = new List<DateRangeSummary>();
-            summarisers.Add(new DateRangeSummary(cb2,new Style() { Unit = "$", Title = "price", PostFix = false }));
-            summarisers.Add(new DateRangeSummary(cb3,new Style() { Unit = "kWh", Title = "power", PostFix = true }));
+            summarisers.Add(new DateRangeSummary(cb2, new Style() { Unit = "$", Title = "price", PostFix = false }));
+            summarisers.Add(new DateRangeSummary(cb3, new Style() { Unit = "kWh", Title = "power", PostFix = true }));
 
             while (csv.Read())
             {
@@ -120,7 +138,7 @@ internal class Program
                         r.TarrifType = currentTarrifType;
                         r.EstimatedCost = cb.Price(r).Values.Sum();
 
-                        foreach(var summariser in summarisers)
+                        foreach (var summariser in summarisers)
                             summariser.Add(r);
 
                         rows.Add(r);
@@ -128,13 +146,75 @@ internal class Program
                 }
             }
 
-            var grid = CS.Chart.Grid(GetOverviewCharts(cb, options.Start.ToDateTime(TimeOnly.MinValue), options.End.ToDateTime(TimeOnly.MaxValue), summarisers.ToArray()), 4, 1);
+            return CS.Chart.Grid(GetOverviewCharts(cb, options.Start.ToDateTime(TimeOnly.MinValue), options.End.ToDateTime(TimeOnly.MaxValue), summarisers.ToArray()), 4, 1);
+        }
+    }
 
-            CS.GenericChartExtensions.Show(grid);
+    private static GenericChart GetDay(Options options,CsvConfiguration config,DateOnly? d)
+    {
+        DateOnly date = d == null?options.Start:d.Value;
 
-            var charts = GetDetailedCharts(cb,rows,detailedView);
+        List<PriceBand> bandList = null;
 
-            CS.GenericChartExtensions.Show(CS.Chart.Grid(charts, 2, 1));
+        if (File.Exists(options.PriceBands))
+        {
+            var bands = File.ReadAllText(options.PriceBands);
+            bandList = JsonSerializer.Deserialize<List<PriceBand>>(bands);
+        }
+        else
+        {
+            bandList = GetDefaultBands();
+
+            var json = JsonSerializer.Serialize(bandList, new JsonSerializerOptions() { WriteIndented = true });
+            File.WriteAllText(options.PriceBands, json);
+        }
+
+        var cb = new CostBreakdown(bandList);
+        var cb2 = new RecordSummary(bandList, x => x.PricePerKwH);
+        var cb3 = new RecordSummary(bandList, x => 1);
+
+        GenericChart chart = null;
+
+        using (var sr = new StreamReader(options.Input))
+
+        using (var csv = new CsvReader(sr, config))
+        {
+            var rows = new List<Record>();
+            csv.Context.RegisterClassMap<RecordMap>();
+
+            var currentTarrifType = TarrifTypes.OffPeak;
+
+            var summarisers = new List<DateRangeSummary>();
+            summarisers.Add(new DateRangeSummary(cb2, new Style() { Unit = "$", Title = "price", PostFix = false }));
+            summarisers.Add(new DateRangeSummary(cb3, new Style() { Unit = "kWh", Title = "power", PostFix = true }));
+
+            while (csv.Read())
+            {
+                switch (csv.GetField(0))
+                {
+                    case "200":
+                        if (currentTarrifType == TarrifTypes.OnPeak)
+                            currentTarrifType = TarrifTypes.OffPeak;
+                        else
+                            currentTarrifType = TarrifTypes.OnPeak;
+                        continue; // filter 200s
+                    case "400": continue; // filter 200s
+                    case "300":
+                        var r = csv.GetRecord<Record>();
+                        r.TarrifType = currentTarrifType;
+                        r.EstimatedCost = cb.Price(r).Values.Sum();
+
+                        foreach (var summariser in summarisers)
+                            summariser.Add(r);
+
+                        rows.Add(r);
+                        break;
+                }
+            }
+            var start = date.ToDateTime(TimeOnly.MinValue);
+            var charts = GetDetailedCharts(cb, rows, start);
+            chart = CS.Chart.Grid(charts, 2, 1);
+            return chart;
         }
     }
 

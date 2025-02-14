@@ -1,0 +1,88 @@
+[
+  {
+    "Name": "car",
+    "Ranges": [
+      {
+        "Start": "00:00:00",
+        "End": "06:00:00"
+      }
+    ],
+    "PricePerKwH": 0.07272728,
+    "TarrifType": 0
+  },
+  {
+    "Name": "sholder",
+    "Ranges": [
+      {
+        "Start": "10:00:00",
+        "End": "15:00:00"
+      }
+    ],
+    "PricePerKwH": 0.2673,
+    "TarrifType": 0
+  },
+  {
+    "Name": "peak",
+    "Ranges": [
+      {
+        "Start": "06:00:00",
+        "End": "10:00:00"
+      },
+      {
+        "Start": "15:00:00",
+        "End": "1.00:00:00"
+      },
+      {
+        "Start": "-00:30:00",
+        "End": "00:00:00"
+      }
+    ],
+    "PricePerKwH": 0.4561,
+    "TarrifType": 0
+  },
+  {
+    "Name": "controlled off peak",
+    "Ranges": [
+      {
+        "Start": "00:00:00",
+        "End": "06:30:00"
+      },
+      {
+        "Start": "23:30:00",
+        "End": "1.00:00:00"
+      },
+      {
+        "Start": "-00:30:00",
+        "End": "00:00:00"
+      }
+    ],
+    "PricePerKwH": 0.2155,
+    "TarrifType": 1
+  },
+  {
+    "Name": "controlled sholder",
+    "Ranges": [
+      {
+        "Start": "09:30:00",
+        "End": "15:30:00"
+      }
+    ],
+    "PricePerKwH": 0.1725,
+    "TarrifType": 1
+  },
+  {
+    "Name": "controlled peak",
+    "Ranges": [
+      {
+        "Start": "06:30:00",
+        "End": "09:30:00"
+      },
+      {
+        "Start": "15:30:00",
+        "End": "23:30:00"
+      }
+    ],
+    "PricePerKwH": 0.4145,
+    "TarrifType": 1
+  }
+]
