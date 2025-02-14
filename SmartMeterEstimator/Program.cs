@@ -37,8 +37,6 @@ internal class Program
 
         //var start = new DateTime(2024, 05, 19);
         //var end = new DateTime(2024, 06, 19);
-
-        
         var bandList = new List<PriceBand> {
             car,
             sholder,
@@ -75,7 +73,27 @@ internal class Program
 
         app.MapGet("/day/", (HttpContext context, DateOnly? date = null) => {
             context.Response.ContentType = "text/html";
-            return  GenericChart.toEmbeddedHTML(GetDay(options,config,date));
+            var prev = date.Value.ToDateTime(TimeOnly.MinValue)-TimeSpan.FromDays(1);
+            var next = date.Value.ToDateTime(TimeOnly.MinValue) + TimeSpan.FromDays(1);
+            var ss = GenericChart.toChartHTML(GetDay(options, config, date));
+            var xxx = $"""
+<!DOCTYPE html>
+<html><head>
+<script src="https://cdn.plot.ly/plotly-2.27.1.min.js" charset="utf-8"></script>
+<title>Plotly.NET Datavisualization</title><meta charset="UTF-8"><meta name="description" content="A plotly.js graph generated with Plotly.NET">
+<link id="favicon" rel="shortcut icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAA1VBMVEVHcEwQnv+gCXURnf+gCXURnf8Rnf+gCXURnf+gCXWgCXURnf+gCHURnf+gCXURnf+gCXURnf+gCXUwke5YVbykBXEijO+gCXURnf8Rnf8Rnf8Rnf8Rnf8Rnf+gCXWIIoygCXUohekRnf8Rnf8Qn/+gCXUQnf8SoP////8ijO+PG4agAnGQLY6gEnrP7f94yP8aof8YwP/DY6jJcrDuz+RlwP/owt0Urv8k/v4e4v9Nr9F1XaSxMoyx3/9rc7Ayq/98UZ3gr9L8+v05rv9Fv9rF5/+7T52h9OprAAAAJHRSTlMAINTUgPmA+gYGNbu7NR9PR/xP/hoh/o74f471R3x8uie60TS1lKLVAAABzUlEQVRYw83X2XKCMBQGYOyK3RdL9x0ChVCkVAHFfXn/RyphKSIBE85Mp8woV/8HOUByIgj/+mg2yb8o1s4/nZHTw2NNobmzf0HOp/d7Ys18Apzv1hHCvJICqIZA8hnAL0T5FYBXiPOrAJ+Q5HMAj5Dm8wC78JtfA1iFLK8oeYBNWM1vvQitltB4QxxCLn8gXD2/NoTjbXZhLX9ypH8c8giFvKJLiEMo5gnALlDyEcAq0PIxwCZQ8wnAItDzKbBZKObNBJDlMCFvEor5YQ8buDfUJdt3kevb1QLl+j2vb4y9OZZ8z0a251feA238uG8qZh/rkmurSLXdqjrQ62eQn5EWsaqS9Dweh3ewDOI7aHdG5ULJ8yM1WE67cQ0604FaJqx/v0leGc6x8aV94+gpWNqiTR3FrShcU68fHqYSA3J47Qwgwnsm3NxtBtR2NVA2BKcbxIC1mFUOoaSIZldzIuDyU+tkAPtjoAMcLwIV4HkVaQDXx0ABOD9HZxIYwcTRJWswQrOBxT8hpBMKIi+xWmdK4pvS4JMqfFqHLyzwpQ2+uMKXd3iDAW9x4E0WvM2DN5rwVhfebMPbffiGA77lgW+64Ns++MYTvvX9m+MHc8vmMWg2fMUAAAAASUVORK5CYII=">
+</head><body>
+<!-- Plotly chart will be drawn inside this DIV --></div>
+<span style="margin:auto; display:table;"><a href="/day?date={prev.Year}-{prev.Month}-{prev.Day}">Prev</a>&nbsp;{date}&nbsp;
+<a href="/day?date={next.Year}-{next.Month}-{next.Day}">Next</a></span>
+<div style="margin:auto; display:table;">
+{ss}
+</div>       
+</body>
+</html>
+""";
+            //return  GenericChart.toEmbeddedHTML(GetDay(options,config,date));
+            return xxx;
             });
         app.Map("/period/", (HttpContext context) => {
             context.Response.ContentType = "text/html";
