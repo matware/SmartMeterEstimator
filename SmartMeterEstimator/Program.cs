@@ -71,12 +71,16 @@ internal class Program
         }
 
 
-        app.MapGet("/day/", (HttpContext context, DateOnly? date = null) => {
+        app.MapGet("/day", (HttpContext context, DateOnly? date = null) => {
             context.Response.ContentType = "text/html";
-            var prev = date.Value.ToDateTime(TimeOnly.MinValue)-TimeSpan.FromDays(1);
+            
+            if (date == null)
+                date = DateOnly.FromDateTime(DateTime.Today);
+
+            var prev = date.Value.ToDateTime(TimeOnly.MinValue) - TimeSpan.FromDays(1);
             var next = date.Value.ToDateTime(TimeOnly.MinValue) + TimeSpan.FromDays(1);
             var ss = GenericChart.toChartHTML(GetDay(options, config, date));
-            var xxx = $"""
+            var responseBody = $"""
 <!DOCTYPE html>
 <html><head>
 <script src="https://cdn.plot.ly/plotly-2.27.1.min.js" charset="utf-8"></script>
@@ -92,13 +96,28 @@ internal class Program
 </body>
 </html>
 """;
-            //return  GenericChart.toEmbeddedHTML(GetDay(options,config,date));
-            return xxx;
+            return responseBody;
             });
+
         app.Map("/period/", (HttpContext context) => {
             context.Response.ContentType = "text/html";
             return GenericChart.toEmbeddedHTML(GetPeriod(options, config));
         });
+
+
+
+        app.MapGet("/", (HttpContext context) => {
+            context.Response.ContentType = "text/html";
+            return
+"""
+<!DOCTYPE html><html><head></head>
+<body>
+<a href="/day/">Day</a><br/>
+<a href="/period/" >Period</a>
+</body>
+</html>
+"""; });
+
 
         app.Run();
     }
@@ -168,7 +187,7 @@ internal class Program
         }
     }
 
-    private static GenericChart GetDay(Options options,CsvConfiguration config,DateOnly? d)
+    private static GenericChart GetDay(Options options, CsvConfiguration config, DateOnly? d)
     {
         DateOnly date = d == null?options.Start:d.Value;
 
@@ -338,9 +357,10 @@ internal class Program
 
     private static GenericChart GetDetailsChart(List<BandValue> priceDetail, PriceBand band, List<DateTime> xAxis,string yAxisLable, string xAxisLabel) 
     {
+        var prefix = yAxisLable == "$";
         var bandedChart = CS.Chart.StackedColumn<decimal, DateTime, string>(
                       values: priceDetail.Select(r => r.Band == band ? r.Value : 0m),
-                      Keys: xAxis, Name: $"{band.Name} - ${priceDetail.Where(x => x.Band == band).Sum(x => x.Value):F2}");
+                      Keys: xAxis, Name: $"{band.Name} - {(prefix?yAxisLable:string.Empty)}{priceDetail.Where(x => x.Band == band).Sum(x => x.Value):F2}{(!prefix?yAxisLable:string.Empty)}");
 
         bandedChart.WithXAxisStyle(title: Title.init(xAxisLabel));
         bandedChart.WithYAxisStyle(title: Title.init(yAxisLable));
