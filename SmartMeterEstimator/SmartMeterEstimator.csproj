@@ -38,6 +38,9 @@
     <None Update="20015323531_20230315_20250314_20250315152354_SAPN_DETAILED.csv">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="20015323531_20231024_20251023_20251024142504_SAPN_DETAILED.csv">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

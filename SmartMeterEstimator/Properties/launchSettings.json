@@ -1,8 +1,7 @@
 {
   "profiles": {
     "SmartMeterEstimator": {
-      "commandName": "Project",
-      "commandLineArgs": "-i 20015323531_20230315_20250314_20250315152354_SAPN_DETAILED.csv --start 2024-03-01 --end 2025-03-01"
+      "commandName": "Project"
     }
   }
 }

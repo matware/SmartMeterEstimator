@@ -8,23 +8,8 @@ using Plotly.NET.CSharp;
 using CommandLine;
 using System.Text.Json;
 
-internal class Program
+internal partial class Program
 {
-
-    public class Options
-    {
-        [Option('i',"input",Required =true,HelpText = "The etsa/power networks sa detailed file csv containing the power meausrements")]
-        public string Input {  get; set; }
-
-        [Option('b', "bands", Required = false, HelpText = "Price bands configuration", Default = "bands.json")]
-        public string PriceBands { get;set; }
-
-        [Option('s', "start", Required = true, HelpText = "Graph start date")]
-        public DateOnly Start { get; set; } = new DateOnly(2024, 05, 19);
-
-        [Option('e', "end", Required = true, HelpText = "Graph end date")]
-        public DateOnly End { get; set; } = new DateOnly(2024, 06, 19);
-    }
     public static List<PriceBand> GetDefaultBands()
     {
         var car = new PriceBand(0.07272728m, TarrifTypes.OnPeak, "car", TimeRange.FromHours(0, 6));
@@ -70,16 +55,23 @@ internal class Program
             return;
         }
 
+        var inputCsvFile = GetLatestCsv(options);
+        var bands = GetBands(options.PriceBands);
+        var rows = GetRecords(inputCsvFile, bands, config);
 
         app.MapGet("/day", (HttpContext context, DateOnly? date = null) => {
             context.Response.ContentType = "text/html";
             
+            var firstDate = DateOnly.FromDateTime(rows.First().Date);
+            var lastDate = DateOnly.FromDateTime(rows.Last().Date);
             if (date == null)
-                date = DateOnly.FromDateTime(DateTime.Today);
+                date = lastDate;
 
-            var prev = date.Value.ToDateTime(TimeOnly.MinValue) - TimeSpan.FromDays(1);
-            var next = date.Value.ToDateTime(TimeOnly.MinValue) + TimeSpan.FromDays(1);
-            var ss = GenericChart.toChartHTML(GetDay(options, config, date));
+            var prev = DateOnly.FromDateTime(date.Value.ToDateTime(TimeOnly.MinValue) - TimeSpan.FromDays(1));
+            var next = DateOnly.FromDateTime(date.Value.ToDateTime(TimeOnly.MinValue) + TimeSpan.FromDays(1));
+            var ss = GenericChart.toChartHTML(GetDay(rows, bands, date));
+            var nextLink = next <= lastDate ? $"<a href=\"/day?date={next.Year}-{next.Month}-{next.Day}\">Next</a>":"[end of data]";
+            var prevLink = prev >= firstDate ? $"<a href=\"/day?date={prev.Year}-{prev.Month}-{prev.Day}\">Prev</a>" : "[start of data]";
             var responseBody = $"""
 <!DOCTYPE html>
 <html><head>
@@ -88,8 +80,9 @@ internal class Program
 <link id="favicon" rel="shortcut icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAA1VBMVEVHcEwQnv+gCXURnf+gCXURnf8Rnf+gCXURnf+gCXWgCXURnf+gCHURnf+gCXURnf+gCXURnf+gCXUwke5YVbykBXEijO+gCXURnf8Rnf8Rnf8Rnf8Rnf8Rnf+gCXWIIoygCXUohekRnf8Rnf8Qn/+gCXUQnf8SoP////8ijO+PG4agAnGQLY6gEnrP7f94yP8aof8YwP/DY6jJcrDuz+RlwP/owt0Urv8k/v4e4v9Nr9F1XaSxMoyx3/9rc7Ayq/98UZ3gr9L8+v05rv9Fv9rF5/+7T52h9OprAAAAJHRSTlMAINTUgPmA+gYGNbu7NR9PR/xP/hoh/o74f471R3x8uie60TS1lKLVAAABzUlEQVRYw83X2XKCMBQGYOyK3RdL9x0ChVCkVAHFfXn/RyphKSIBE85Mp8woV/8HOUByIgj/+mg2yb8o1s4/nZHTw2NNobmzf0HOp/d7Ys18Apzv1hHCvJICqIZA8hnAL0T5FYBXiPOrAJ+Q5HMAj5Dm8wC78JtfA1iFLK8oeYBNWM1vvQitltB4QxxCLn8gXD2/NoTjbXZhLX9ypH8c8giFvKJLiEMo5gnALlDyEcAq0PIxwCZQ8wnAItDzKbBZKObNBJDlMCFvEor5YQ8buDfUJdt3kevb1QLl+j2vb4y9OZZ8z0a251feA238uG8qZh/rkmurSLXdqjrQ62eQn5EWsaqS9Dweh3ewDOI7aHdG5ULJ8yM1WE67cQ0604FaJqx/v0leGc6x8aV94+gpWNqiTR3FrShcU68fHqYSA3J47Qwgwnsm3NxtBtR2NVA2BKcbxIC1mFUOoaSIZldzIuDyU+tkAPtjoAMcLwIV4HkVaQDXx0ABOD9HZxIYwcTRJWswQrOBxT8hpBMKIi+xWmdK4pvS4JMqfFqHLyzwpQ2+uMKXd3iDAW9x4E0WvM2DN5rwVhfebMPbffiGA77lgW+64Ns++MYTvvX9m+MHc8vmMWg2fMUAAAAASUVORK5CYII=">
 </head><body>
 <!-- Plotly chart will be drawn inside this DIV --></div>
-<span style="margin:auto; display:table;"><a href="/day?date={prev.Year}-{prev.Month}-{prev.Day}">Prev</a>&nbsp;{date}&nbsp;
-<a href="/day?date={next.Year}-{next.Month}-{next.Day}">Next</a></span>
+<span style="margin:auto; display:table;">{date}</span>
+<span style="margin:auto; display:table;">{prevLink}&nbsp;
+{nextLink}</span>
 <div style="margin:auto; display:table;">
 {ss}
 </div>       
@@ -101,10 +94,8 @@ internal class Program
 
         app.Map("/period/", (HttpContext context) => {
             context.Response.ContentType = "text/html";
-            return GenericChart.toEmbeddedHTML(GetPeriod(options, config));
+            return GenericChart.toEmbeddedHTML(GetPeriod(rows, bands,options, config));
         });
-
-
 
         app.MapGet("/", (HttpContext context) => {
             context.Response.ContentType = "text/html";
@@ -118,112 +109,72 @@ internal class Program
 </html>
 """; });
 
-
         app.Run();
     }
 
-
-    private static GenericChart GetPeriod(Options options, CsvConfiguration config)
+    private static string GetLatestCsv(Options options)
     {
-        List<PriceBand> bandList = null;
-
-        if (File.Exists(options.PriceBands))
+        if(options.Input != null)
         {
-            var bands = File.ReadAllText(options.PriceBands);
-            bandList = JsonSerializer.Deserialize<List<PriceBand>>(bands);
-        }
-        else
-        {
-            bandList = GetDefaultBands();
-
-            var json = JsonSerializer.Serialize(bandList, new JsonSerializerOptions() { WriteIndented = true });
-            File.WriteAllText(options.PriceBands, json);
+            if (File.Exists(options.Input))
+                return options.Input;
+            else
+                throw new FileNotFoundException($"{options.Input} not found");
         }
 
-        var cb = new CostBreakdown(bandList);
-        var cb2 = new RecordSummary(bandList, x => x.PricePerKwH);
-        var cb3 = new RecordSummary(bandList, x => 1);
+        var dir = @".\";
 
-        GenericChart chart = null;
-
-        using (var sr = new StreamReader(options.Input))
-
-        using (var csv = new CsvReader(sr, config))
+        if (Directory.Exists(dir))
         {
-            var rows = new List<Record>();
-            csv.Context.RegisterClassMap<RecordMap>();
-
-            var currentTarrifType = TarrifTypes.OffPeak;
-
-            var summarisers = new List<DateRangeSummary>();
-            summarisers.Add(new DateRangeSummary(cb2, new Style() { Unit = "$", Title = "price", PostFix = false }));
-            summarisers.Add(new DateRangeSummary(cb3, new Style() { Unit = "kWh", Title = "power", PostFix = true }));
-
-            while (csv.Read())
-            {
-                switch (csv.GetField(0))
-                {
-                    case "200":
-                        if (currentTarrifType == TarrifTypes.OnPeak)
-                            currentTarrifType = TarrifTypes.OffPeak;
-                        else
-                            currentTarrifType = TarrifTypes.OnPeak;
-                        continue; // filter 200s
-                    case "400": continue; // filter 200s
-                    case "300":
-                        var r = csv.GetRecord<Record>();
-                        r.TarrifType = currentTarrifType;
-                        r.EstimatedCost = cb.Price(r).Values.Sum();
-
-                        foreach (var summariser in summarisers)
-                            summariser.Add(r);
-
-                        rows.Add(r);
-                        break;
-                }
-            }
-
-            return CS.Chart.Grid(GetOverviewCharts(cb, options.Start.ToDateTime(TimeOnly.MinValue), options.End.ToDateTime(TimeOnly.MaxValue), summarisers.ToArray()), 4, 1);
+            var di = new DirectoryInfo(dir);
+            return di.GetFiles("*.csv").OrderBy(f => f.CreationTime).Last().FullName;
+            
         }
+        throw new FileNotFoundException($"no input csv found");
     }
 
-    private static GenericChart GetDay(Options options, CsvConfiguration config, DateOnly? d)
+    private static (DateOnly start,  DateOnly end) GetDataDateRange(List<Record> rows)
     {
-        DateOnly date = d == null?options.Start:d.Value;
+        return (DateOnly.FromDateTime(rows.First().Date), DateOnly.FromDateTime(rows.Last().Date));
+    }
 
-        List<PriceBand> bandList = null;
-
-        if (File.Exists(options.PriceBands))
-        {
-            var bands = File.ReadAllText(options.PriceBands);
-            bandList = JsonSerializer.Deserialize<List<PriceBand>>(bands);
-        }
-        else
-        {
-            bandList = GetDefaultBands();
-
-            var json = JsonSerializer.Serialize(bandList, new JsonSerializerOptions() { WriteIndented = true });
-            File.WriteAllText(options.PriceBands, json);
-        }
-
+    private static GenericChart GetPeriod(List<Record> rows, List<PriceBand> bandList, Options options, CsvConfiguration config)
+    {        
         var cb = new CostBreakdown(bandList);
         var cb2 = new RecordSummary(bandList, x => x.PricePerKwH);
         var cb3 = new RecordSummary(bandList, x => 1);
 
-        GenericChart chart = null;
+        var summarisers = new List<DateRangeSummary>
+        {
+            new DateRangeSummary(cb2, new Style() { Unit = "$", Title = "price", PostFix = false }),
+            new DateRangeSummary(cb3, new Style() { Unit = "kWh", Title = "power", PostFix = true })
+        };
 
-        using (var sr = new StreamReader(options.Input))
+        foreach (var row in rows)
+        {
+            foreach (var summariser in summarisers)
+                summariser.Add(row);
+        }
+
+        var startDate = options.Start.HasValue ? options.Start.Value.ToDateTime(TimeOnly.MinValue) : rows.First().Date;
+        var endDate = options.End.HasValue ? options.End.Value.ToDateTime(TimeOnly.MinValue) : rows.Last().Date;
+        return CS.Chart.Grid(GetOverviewCharts(cb, startDate, endDate, summarisers.ToArray()), 4, 1);
+    }
+
+    private static List<Record> GetRecords(string input, List<PriceBand> priceBands, CsvConfiguration config)
+    {
+        var cb = new CostBreakdown(priceBands);
+        var rows = new List<Record>();
+
+        using (var sr = new StreamReader(input))
 
         using (var csv = new CsvReader(sr, config))
         {
-            var rows = new List<Record>();
             csv.Context.RegisterClassMap<RecordMap>();
 
             var currentTarrifType = TarrifTypes.OffPeak;
 
             var summarisers = new List<DateRangeSummary>();
-            summarisers.Add(new DateRangeSummary(cb2, new Style() { Unit = "$", Title = "price", PostFix = false }));
-            summarisers.Add(new DateRangeSummary(cb3, new Style() { Unit = "kWh", Title = "power", PostFix = true }));
 
             while (csv.Read())
             {
@@ -247,12 +198,43 @@ internal class Program
                         rows.Add(r);
                         break;
                 }
-            }
-            var start = date.ToDateTime(TimeOnly.MinValue);
-            var charts = GetDetailedCharts(cb, rows, start);
-            chart = CS.Chart.Grid(charts, 2, 1);
-            return chart;
+            }          
         }
+
+        return rows;
+    }
+
+    public static List<PriceBand> GetBands(string bandsFile)
+    {
+        List<PriceBand> bandList = null;
+
+        if (File.Exists(bandsFile))
+        {
+            var bands = File.ReadAllText(bandsFile);
+            bandList = JsonSerializer.Deserialize<List<PriceBand>>(bands);
+        }
+        else
+        {
+            bandList = GetDefaultBands();
+
+            var json = JsonSerializer.Serialize(bandList, new JsonSerializerOptions() { WriteIndented = true });
+            File.WriteAllText(bandsFile, json);
+        }
+
+        return bandList;
+    }
+    
+    private static GenericChart GetDay(List<Record> rows, List<PriceBand> bandList, DateOnly? d)
+    {
+        var cb = new CostBreakdown(bandList);
+        var cb2 = new RecordSummary(bandList, x => x.PricePerKwH);
+        var cb3 = new RecordSummary(bandList, x => 1);
+
+        DateOnly date = d == null ? DateOnly.FromDateTime( rows.Last().Date): d.Value;
+
+        var start = date.ToDateTime(TimeOnly.MinValue);
+        var charts = GetDetailedCharts(cb, rows, start);
+        return CS.Chart.Grid(charts, 2, 1);
     }
 
     public static List<GenericChart> GetOverviewCharts(CostBreakdown cb, DateTime start, DateTime end, params DateRangeSummary[] summarisers)
