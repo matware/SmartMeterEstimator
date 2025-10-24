@@ -1,47 +1,17 @@
-﻿using CsvHelper;
-using CsvHelper.Configuration;
-using SmartMeterEstimator;
-using System.Globalization;
+﻿using SmartMeterEstimator;
 using Plotly.NET;
 using CS = Plotly.NET.CSharp;
 using Plotly.NET.CSharp;
 using CommandLine;
-using System.Text.Json;
 
 internal partial class Program
 {
-    public static List<PriceBand> GetDefaultBands()
-    {
-        var car = new PriceBand(0.07272728m, TarrifTypes.OnPeak, "car", TimeRange.FromHours(0, 6));
-        var peak = new PriceBand(0.4561m, TarrifTypes.OnPeak, "peak", TimeRange.FromHours(6, 10), TimeRange.FromHours(15, 24), TimeRange.FromHours(-0.5f, 0));
-        var sholder = new PriceBand(0.2673m, TarrifTypes.OnPeak, "sholder", TimeRange.FromHours(10, 15));
-
-        var controlledMorning = new PriceBand(0.2155m, TarrifTypes.OffPeak, "controlled off peak", TimeRange.FromHours(0, 6.5), TimeRange.FromHours(23.5, 24), TimeRange.FromHours(-0.5, 0));
-        var controlledSholder = new PriceBand(0.1725m, TarrifTypes.OffPeak, "controlled sholder", TimeRange.FromHours(9.5, 15.5));
-        var controlledPeak1 = new PriceBand(0.4145m, TarrifTypes.OffPeak, "controlled peak", TimeRange.FromHours(6.5, 9.5), TimeRange.FromHours(15.5, 23.5));
-
-        //var start = new DateTime(2024, 05, 19);
-        //var end = new DateTime(2024, 06, 19);
-        var bandList = new List<PriceBand> {
-            car,
-            sholder,
-            peak,
-            controlledMorning,
-            controlledSholder,
-            controlledPeak1,};
-
-        return bandList;
-    }
     private static void Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
         var app = builder.Build();
 
-        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
-        {
-            //NewLine = Environment.NewLine,
-            HasHeaderRecord = false,
-        };
+       
 
         Options options = null;
         
@@ -56,8 +26,8 @@ internal partial class Program
         }
 
         var inputCsvFile = GetLatestCsv(options);
-        var bands = GetBands(options.PriceBands);
-        var rows = GetRecords(inputCsvFile, bands, config);
+        var bands = PriceBand.LoadOrCreateBands(options.PriceBands);
+        var rows = RecordLoader.GetRecords(inputCsvFile, bands);
 
         app.MapGet("/day", (HttpContext context, DateOnly? date = null) => {
             context.Response.ContentType = "text/html";
@@ -94,7 +64,7 @@ internal partial class Program
 
         app.Map("/period/", (HttpContext context) => {
             context.Response.ContentType = "text/html";
-            return GenericChart.toEmbeddedHTML(GetPeriod(rows, bands,options, config));
+            return GenericChart.toEmbeddedHTML(GetPeriod(rows, bands,options));
         });
 
         app.MapGet("/", (HttpContext context) => {
@@ -104,7 +74,7 @@ internal partial class Program
 <!DOCTYPE html><html><head></head>
 <body>
 <a href="/day/">Day</a><br/>
-<a href="/period/" >Period</a>
+<a href="/period/">Period</a>
 </body>
 </html>
 """; });
@@ -138,7 +108,7 @@ internal partial class Program
         return (DateOnly.FromDateTime(rows.First().Date), DateOnly.FromDateTime(rows.Last().Date));
     }
 
-    private static GenericChart GetPeriod(List<Record> rows, List<PriceBand> bandList, Options options, CsvConfiguration config)
+    private static GenericChart GetPeriod(List<Record> rows, List<PriceBand> bandList, Options options)
     {        
         var cb = new CostBreakdown(bandList);
         var cb2 = new RecordSummary(bandList, x => x.PricePerKwH);
@@ -161,68 +131,6 @@ internal partial class Program
         return CS.Chart.Grid(GetOverviewCharts(cb, startDate, endDate, summarisers.ToArray()), 4, 1);
     }
 
-    private static List<Record> GetRecords(string input, List<PriceBand> priceBands, CsvConfiguration config)
-    {
-        var cb = new CostBreakdown(priceBands);
-        var rows = new List<Record>();
-
-        using (var sr = new StreamReader(input))
-
-        using (var csv = new CsvReader(sr, config))
-        {
-            csv.Context.RegisterClassMap<RecordMap>();
-
-            var currentTarrifType = TarrifTypes.OffPeak;
-
-            var summarisers = new List<DateRangeSummary>();
-
-            while (csv.Read())
-            {
-                switch (csv.GetField(0))
-                {
-                    case "200":
-                        if (currentTarrifType == TarrifTypes.OnPeak)
-                            currentTarrifType = TarrifTypes.OffPeak;
-                        else
-                            currentTarrifType = TarrifTypes.OnPeak;
-                        continue; // filter 200s
-                    case "400": continue; // filter 200s
-                    case "300":
-                        var r = csv.GetRecord<Record>();
-                        r.TarrifType = currentTarrifType;
-                        r.EstimatedCost = cb.Price(r).Values.Sum();
-
-                        foreach (var summariser in summarisers)
-                            summariser.Add(r);
-
-                        rows.Add(r);
-                        break;
-                }
-            }          
-        }
-
-        return rows;
-    }
-
-    public static List<PriceBand> GetBands(string bandsFile)
-    {
-        List<PriceBand> bandList = null;
-
-        if (File.Exists(bandsFile))
-        {
-            var bands = File.ReadAllText(bandsFile);
-            bandList = JsonSerializer.Deserialize<List<PriceBand>>(bands);
-        }
-        else
-        {
-            bandList = GetDefaultBands();
-
-            var json = JsonSerializer.Serialize(bandList, new JsonSerializerOptions() { WriteIndented = true });
-            File.WriteAllText(bandsFile, json);
-        }
-
-        return bandList;
-    }
     
     private static GenericChart GetDay(List<Record> rows, List<PriceBand> bandList, DateOnly? d)
     {
@@ -335,7 +243,6 @@ internal partial class Program
         }
         return xAxis;
     }
-
 
     private static GenericChart GetDetailsChart(List<BandValue> priceDetail, PriceBand band, List<DateTime> xAxis,string yAxisLable, string xAxisLabel) 
     {
