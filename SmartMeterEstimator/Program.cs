@@ -11,8 +11,6 @@ internal partial class Program
         var builder = WebApplication.CreateBuilder(args);
         var app = builder.Build();
 
-       
-
         Options options = null;
         
         Parser.Default.ParseArguments<Options>(args).WithParsed<Options>(o => {            
@@ -28,12 +26,12 @@ internal partial class Program
         var inputCsvFile = GetLatestCsv(options);
         var bands = PriceBand.LoadOrCreateBands(options.PriceBands);
         var rows = RecordLoader.GetRecords(inputCsvFile, bands);
+        var firstDate = DateOnly.FromDateTime(rows.First().Date);
+        var lastDate = DateOnly.FromDateTime(rows.Last().Date);
 
         app.MapGet("/day", (HttpContext context, DateOnly? date = null) => {
             context.Response.ContentType = "text/html";
             
-            var firstDate = DateOnly.FromDateTime(rows.First().Date);
-            var lastDate = DateOnly.FromDateTime(rows.Last().Date);
             if (date == null)
                 date = lastDate;
 
@@ -50,36 +48,79 @@ internal partial class Program
 <link id="favicon" rel="shortcut icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAA1VBMVEVHcEwQnv+gCXURnf+gCXURnf8Rnf+gCXURnf+gCXWgCXURnf+gCHURnf+gCXURnf+gCXURnf+gCXUwke5YVbykBXEijO+gCXURnf8Rnf8Rnf8Rnf8Rnf8Rnf+gCXWIIoygCXUohekRnf8Rnf8Qn/+gCXUQnf8SoP////8ijO+PG4agAnGQLY6gEnrP7f94yP8aof8YwP/DY6jJcrDuz+RlwP/owt0Urv8k/v4e4v9Nr9F1XaSxMoyx3/9rc7Ayq/98UZ3gr9L8+v05rv9Fv9rF5/+7T52h9OprAAAAJHRSTlMAINTUgPmA+gYGNbu7NR9PR/xP/hoh/o74f471R3x8uie60TS1lKLVAAABzUlEQVRYw83X2XKCMBQGYOyK3RdL9x0ChVCkVAHFfXn/RyphKSIBE85Mp8woV/8HOUByIgj/+mg2yb8o1s4/nZHTw2NNobmzf0HOp/d7Ys18Apzv1hHCvJICqIZA8hnAL0T5FYBXiPOrAJ+Q5HMAj5Dm8wC78JtfA1iFLK8oeYBNWM1vvQitltB4QxxCLn8gXD2/NoTjbXZhLX9ypH8c8giFvKJLiEMo5gnALlDyEcAq0PIxwCZQ8wnAItDzKbBZKObNBJDlMCFvEor5YQ8buDfUJdt3kevb1QLl+j2vb4y9OZZ8z0a251feA238uG8qZh/rkmurSLXdqjrQ62eQn5EWsaqS9Dweh3ewDOI7aHdG5ULJ8yM1WE67cQ0604FaJqx/v0leGc6x8aV94+gpWNqiTR3FrShcU68fHqYSA3J47Qwgwnsm3NxtBtR2NVA2BKcbxIC1mFUOoaSIZldzIuDyU+tkAPtjoAMcLwIV4HkVaQDXx0ABOD9HZxIYwcTRJWswQrOBxT8hpBMKIi+xWmdK4pvS4JMqfFqHLyzwpQ2+uMKXd3iDAW9x4E0WvM2DN5rwVhfebMPbffiGA77lgW+64Ns++MYTvvX9m+MHc8vmMWg2fMUAAAAASUVORK5CYII=">
 </head><body>
 <!-- Plotly chart will be drawn inside this DIV --></div>
+<span style="margin:auto; display:table;float:left"><a href="/period?start={formatDate(firstDate)}&end={formatDate(lastDate)}">Period</a></span>
 <span style="margin:auto; display:table;">{date}</span>
 <span style="margin:auto; display:table;">{prevLink}&nbsp;
 {nextLink}</span>
-<div style="margin:auto; display:table;">
-{ss}
-</div>       
+
+<div style="margin:auto; display:table;">{ss}</div>       
+
 </body>
 </html>
 """;
             return responseBody;
             });
 
-        app.Map("/period/", (HttpContext context) => {
+        app.Map("/period/", (HttpContext context, DateOnly? start, DateOnly? end) => {
             context.Response.ContentType = "text/html";
-            return GenericChart.toEmbeddedHTML(GetPeriod(rows, bands,options));
+
+            DateTime startDate = rows.First().Date;
+            DateTime endDate = rows.Last().Date;
+            if(start != null)
+                startDate = start.Value.ToDateTime(TimeOnly.MinValue);
+
+            if (start == null && options.Start.HasValue)
+                startDate = options.Start.Value.ToDateTime(TimeOnly.MinValue);
+
+            if (end != null)
+                endDate = end.Value.ToDateTime(TimeOnly.MinValue);
+
+            if (end == null && options.End.HasValue)
+                endDate = options.End.Value.ToDateTime(TimeOnly.MinValue);
+          
+            var d  = rows.Where(x => x.Date >= startDate && x.Date <= endDate).ToList();
+            
+
+            var ss = GenericChart.toChartHTML(GetPeriod(d, bands, options, startDate, endDate));
+            var responseBody = $"""
+<!DOCTYPE html>
+<html><head>
+<script src="https://cdn.plot.ly/plotly-2.27.1.min.js" charset="utf-8"></script>
+<title>Plotly.NET Datavisualization</title><meta charset="UTF-8"><meta name="description" content="A plotly.js graph generated with Plotly.NET">
+<link id="favicon" rel="shortcut icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAA1VBMVEVHcEwQnv+gCXURnf+gCXURnf8Rnf+gCXURnf+gCXWgCXURnf+gCHURnf+gCXURnf+gCXURnf+gCXUwke5YVbykBXEijO+gCXURnf8Rnf8Rnf8Rnf8Rnf8Rnf+gCXWIIoygCXUohekRnf8Rnf8Qn/+gCXUQnf8SoP////8ijO+PG4agAnGQLY6gEnrP7f94yP8aof8YwP/DY6jJcrDuz+RlwP/owt0Urv8k/v4e4v9Nr9F1XaSxMoyx3/9rc7Ayq/98UZ3gr9L8+v05rv9Fv9rF5/+7T52h9OprAAAAJHRSTlMAINTUgPmA+gYGNbu7NR9PR/xP/hoh/o74f471R3x8uie60TS1lKLVAAABzUlEQVRYw83X2XKCMBQGYOyK3RdL9x0ChVCkVAHFfXn/RyphKSIBE85Mp8woV/8HOUByIgj/+mg2yb8o1s4/nZHTw2NNobmzf0HOp/d7Ys18Apzv1hHCvJICqIZA8hnAL0T5FYBXiPOrAJ+Q5HMAj5Dm8wC78JtfA1iFLK8oeYBNWM1vvQitltB4QxxCLn8gXD2/NoTjbXZhLX9ypH8c8giFvKJLiEMo5gnALlDyEcAq0PIxwCZQ8wnAItDzKbBZKObNBJDlMCFvEor5YQ8buDfUJdt3kevb1QLl+j2vb4y9OZZ8z0a251feA238uG8qZh/rkmurSLXdqjrQ62eQn5EWsaqS9Dweh3ewDOI7aHdG5ULJ8yM1WE67cQ0604FaJqx/v0leGc6x8aV94+gpWNqiTR3FrShcU68fHqYSA3J47Qwgwnsm3NxtBtR2NVA2BKcbxIC1mFUOoaSIZldzIuDyU+tkAPtjoAMcLwIV4HkVaQDXx0ABOD9HZxIYwcTRJWswQrOBxT8hpBMKIi+xWmdK4pvS4JMqfFqHLyzwpQ2+uMKXd3iDAW9x4E0WvM2DN5rwVhfebMPbffiGA77lgW+64Ns++MYTvvX9m+MHc8vmMWg2fMUAAAAASUVORK5CYII=">
+</head><body>
+<!-- Plotly chart will be drawn inside this DIV --></div>
+<span style="margin:auto; display:table;float:left"><a href="/day?date{formatDate(endDate)}">Day</a><br/></span>
+<div style="margin:auto; display:table;">{ss}</div>
+
+</body>
+</html>
+""";
+            return responseBody;
         });
 
         app.MapGet("/", (HttpContext context) => {
             context.Response.ContentType = "text/html";
             return
-"""
+$"""
 <!DOCTYPE html><html><head></head>
 <body>
 <a href="/day/">Day</a><br/>
-<a href="/period/">Period</a>
+<a href="/period?start={formatDate(firstDate)}&end={formatDate(lastDate)}">Period</a>
 </body>
 </html>
 """; });
 
         app.Run();
+    }
+
+    private static string formatDate(DateTime d)
+    {
+        return formatDate(DateOnly.FromDateTime(d));
+    }
+    private static string formatDate(DateOnly d)
+    {
+        return $"{d.Year}-{d.Month}-{d.Day}";
     }
 
     private static string GetLatestCsv(Options options)
@@ -108,12 +149,12 @@ internal partial class Program
         return (DateOnly.FromDateTime(rows.First().Date), DateOnly.FromDateTime(rows.Last().Date));
     }
 
-    private static GenericChart GetPeriod(List<Record> rows, List<PriceBand> bandList, Options options)
+    private static GenericChart GetPeriod(List<Record> rows, List<PriceBand> bandList, Options options, DateTime startDate, DateTime endDate)
     {        
         var cb = new CostBreakdown(bandList);
         var cb2 = new RecordSummary(bandList, x => x.PricePerKwH);
         var cb3 = new RecordSummary(bandList, x => 1);
-
+        
         var summarisers = new List<DateRangeSummary>
         {
             new DateRangeSummary(cb2, new Style() { Unit = "$", Title = "price", PostFix = false }),
@@ -126,8 +167,6 @@ internal partial class Program
                 summariser.Add(row);
         }
 
-        var startDate = options.Start.HasValue ? options.Start.Value.ToDateTime(TimeOnly.MinValue) : rows.First().Date;
-        var endDate = options.End.HasValue ? options.End.Value.ToDateTime(TimeOnly.MinValue) : rows.Last().Date;
         return CS.Chart.Grid(GetOverviewCharts(cb, startDate, endDate, summarisers.ToArray()), 4, 1);
     }
 
@@ -135,9 +174,6 @@ internal partial class Program
     private static GenericChart GetDay(List<Record> rows, List<PriceBand> bandList, DateOnly? d)
     {
         var cb = new CostBreakdown(bandList);
-        var cb2 = new RecordSummary(bandList, x => x.PricePerKwH);
-        var cb3 = new RecordSummary(bandList, x => 1);
-
         DateOnly date = d == null ? DateOnly.FromDateTime( rows.Last().Date): d.Value;
 
         var start = date.ToDateTime(TimeOnly.MinValue);
@@ -206,7 +242,6 @@ internal partial class Program
         if (selectedRecord == null)
             return result;
 
-
         foreach (var d in costDetails)
         {
             var values = d.Calculate(selectedRecord);
@@ -224,9 +259,9 @@ internal partial class Program
             priceDetailCharts.Clear();
             var bands = detailValues[detail].Select(x => x.Band).Distinct();
 
-            foreach(var band in bands)
+            foreach (var band in bands)
                 priceDetailCharts.Add(GetDetailsChart(detailValues[detail], band, xAxis, detail.Unit, "Time"));
-
+           
             result.Add(CS.Chart.Combine(priceDetailCharts));
         }
        
